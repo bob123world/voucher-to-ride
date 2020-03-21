@@ -1,0 +1,38 @@
+[
+    {
+        "color": "purple",
+        "cards": 12
+    },
+    {
+        "color": "blue",
+        "cards": 12
+    },
+    {
+        "color": "green",
+        "cards": 12
+    },
+    {
+        "color": "yellow",
+        "cards": 12
+    },
+    {
+        "color": "black",
+        "cards": 12
+    },
+    {
+        "color": "orange",
+        "cards": 12
+    },
+    {
+        "color": "white",
+        "cards": 12
+    },
+    {
+        "color": "red",
+        "cards": 12
+    },
+    {
+        "color": "locomotive",
+        "cards": 14
+    }
+]

@@ -1,0 +1,27 @@
+[
+    {
+        "color": "blue",
+        "trains": 45,
+        "stations": 3
+    },
+    {
+        "color": "red",
+        "trains": 45,
+        "stations": 3
+    },
+    {
+        "color": "green",
+        "trains": 45,
+        "stations": 3
+    },
+    {
+        "color": "yellow",
+        "trains": 45,
+        "stations": 3
+    },
+    {
+        "color": "black",
+        "trains": 45,
+        "stations": 3
+    }
+]
