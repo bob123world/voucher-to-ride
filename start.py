@@ -6,12 +6,15 @@ def main(numplay, game):
     data = {}
 
     # Insert players
+    data["spectators"] = []
     data["players"] = []
     data["sequence"] = []
     players = json_load("pieces", game)
     for i, player in enumerate(players):
         if i < numplay:
             player["name"] = ""
+            player["chat_id"] = 0
+            player["cards"] = ""
             player["points"] = 0
             player["stations"] = ["unknown","unknown","unknown"]
             data["players"].append(player)
@@ -30,6 +33,7 @@ def main(numplay, game):
     
     # Routes
     routes = json_load("route_cards", game)
+    data["tickets"] = shuffle_routes(routes["normal"])
     long_routes = shuffle_routes(routes["special"])
     for player in players:
         player["routes"] = []
@@ -72,7 +76,6 @@ def json_save(data):
     try:
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)),'data.json')
         with open(path, 'w') as json_file:
-            #json.dump(data, json_file)
             json_file.write(json.dumps(data, ensure_ascii=False))
     except Exception as e:
         print(e)
