@@ -42,10 +42,29 @@ def main(numplay, game):
 
     # Routes
     data["routes"] = []
-    routes = json_load("maps", game)
-    for route in routes["connections"]:
+    map_data = json_load("maps", game)
+    for route in map_data["connections"]:
         route["player"] = ""
         data["routes"].append(route)
+
+    # Add cities and do check
+    data["cities"] = map_data["cities"]
+    check = []
+    for route in map_data["connections"]:
+        check.append(route["city1"])
+        check.append(route["city2"])
+
+    check = set(check)
+    check = list(check)
+
+    data["cities"].sort()
+    check.sort()
+    print(str(data["cities"]))
+    print(str(check))
+    if set(data["cities"]) == set(check):
+        print("Length of cities in routes matches")
+    else:
+        print("something went wrong in the cities section")
 
     json_save(data)
 

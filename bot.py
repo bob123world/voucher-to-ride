@@ -22,7 +22,7 @@ def start(update, context):
     data = json_load()
     present = False
     for player in data["players"]:
-        if update.massage.chat_id == player["chat_id"]:
+        if update.message.chat_id == player["chat_id"]:
             reply_text += "Welcome back to Bobbie's Venetian Hotel & Casino! \n\n We are still playing ticket to ride!!!\n\n"
             reply_text += "Your color is: " + player["color"]
             markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
@@ -32,14 +32,12 @@ def start(update, context):
         reply_text = "Hello, \n\nWelcome to Bobbie\'s Venitian Hotel & Casino\nCome and play with us!\n\nWe are playing Ticket To Ride tonight...\nChoose an available color to add yourself to the game!\n\nYou are now a spectator!"
         data["spectators"].append(update.message.chat_id)
         json_save(data)
-        available_player_colors = []
-        for player in data["players"]:
-            if player["chat_id"] < 1:
-                available_player_colors.append([player["color"]])
+        available_player_colors = list_available_colors(data, True)  
     
         markup = ReplyKeyboardMarkup(available_player_colors, one_time_keyboard=True)
 
     update.message.reply_text(reply_text, reply_markup=markup)
+    return SELECTION
 
 def restart(update, context):
     """Restart the game"""
@@ -54,23 +52,25 @@ def route(update, context):
     pass
 
 def add(update, context):
-    color = context.args[0]
+    color = update.message.text.lower()
+    reply_text = ""
     data = json_load()
-    present = False
     for player in data["players"]:
         if color in player["color"]:
             if player["chat_id"] < 1:
                 player["chat_id"] = update.message.chat_id
                 player["name"] = update.message.from_user.first_name
-                update.message.reply_text('You are assigned to player color: ' + player["color"])
+                reply_text += "You are assigned to player color: " + player["color"]
                 data["spectators"] = [x for x in data["spectators"] if x != update.message.chat_id]
+                markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
             else:
-                update.message.reply_text('Somebody else is already assigned to this color, please choose another one!')
-            present = True
-    if not present:
-        update.message.reply_text('The provided color:' + color + ' is not available!')
-
+                reply_text += "Somebody else is already assigned to this color, please choose another one!"
+                available_player_colors = list_available_colors(data, True)
+                markup = ReplyKeyboardMarkup(available_player_colors, one_time_keyboard=True)
+                return SELECTION
     json_save(data)
+    update.message.reply_text(reply_text, reply_markup=markup)
+    return OPTIONS
 
 def deck(update, context):
     """Get your deck"""
@@ -98,8 +98,10 @@ def deck(update, context):
                 response += "All stations build in: " + player["stations"][0] + ","+ player["stations"][1] + ","+ player["stations"][2] + "\n"
             
             response += "\nTrains left: " + str(player["trains"])
-            
-    update.message.reply_text(response)
+
+    markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)        
+    update.message.reply_text(response, reply_markup=markup)
+    return OPTIONS
 
 def market(update, context):
     """Get the marketplace"""
@@ -108,7 +110,9 @@ def market(update, context):
     for i,card in enumerate(data["market"]):
         response += str(i+1) + " " + card + "\n"
 
-    update.message.reply_text(response)
+    markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)        
+    update.message.reply_text(response, reply_markup=markup)
+    return OPTIONS
 
 def routes(update, context):
     """Get all routes"""
@@ -323,6 +327,17 @@ def get_player(data, id):
             p = player
     return p
 
+def list_available_colors(data, doublelist = False):
+    """Place available player colors in a list or a nested list"""
+    available_player_colors = []
+    for player in data["players"]:
+        if player["chat_id"] < 1:
+            if doublelist:
+                available_player_colors.append([player["color"]])
+            else:
+                available_player_colors.append(player["color"])
+    return available_player_colors
+
 def json_load():
     data = {}
     try:
@@ -347,6 +362,24 @@ def error(update, context):
     """Log Errors caused by Updates."""
     logger.warning('Update "%s" caused error "%s"', update, context.error)
 
+def choose_city():
+    pass
+
+def choose_market():
+    pass
+
+def choose_player():
+    pass
+
+def build_station():
+    pass
+
+def send_map():
+    pass
+
+def get_new_tickets():
+    pass
+
 def main():
     # Get configuration
     config = {}
@@ -363,9 +396,9 @@ def main():
 
     data = json_load()
     aplayers = ""
-    for player in data["players"]:
-        if player["chat_id"] < 1:
-            aplayers += player["color"] + "|"
+    availabe_colors = list_available_colors(data)
+    for color in availabe_colors:
+        aplayers += color + "|"
 
     aplayers = aplayers[:-1]
 
@@ -373,8 +406,14 @@ def main():
         entry_points=[CommandHandler("start", start)],
 
         states = {
-            START: [MessageHandler(Filters.regex("^(" + aplayers + ")$"), add),]
-            #OPTIONS: 
+            SELECTION: [MessageHandler(Filters.regex("^(" + aplayers + ")$"), add),],
+            OPTIONS: [MessageHandler(Filters.regex("^(Get Market Card)$"), choose_market), MessageHandler(Filters.regex("^(Build Route)$"), choose_city),
+            MessageHandler(Filters.regex("^(Build Station)$"), build_station), MessageHandler(Filters.regex("^(Get New Tickets)$"), get_new_tickets),
+            MessageHandler(Filters.regex("^(Deck)$"), deck), MessageHandler(Filters.regex("^(Market)$"), market),
+            MessageHandler(Filters.regex("^(Overview)$"), overview), MessageHandler(Filters.regex("^(Map)$"), send_map),
+            MessageHandler(Filters.regex("^(Routes)$"), routes), MessageHandler(Filters.regex("^(City)$"), choose_city),
+            MessageHandler(Filters.regex("^(Your Routes)$"), yroutes), MessageHandler(Filters.regex("^(Player)$"), choose_player),
+            MessageHandler(Filters.regex("^(Longest Route)$"), lroute), MessageHandler(Filters.regex("^(Points)$"), points), MessageHandler(Filters.regex("^(Help)$"), help)],
         },
 
         fallbacks = [MessageHandler(Filters.regex("^Done"), start)],

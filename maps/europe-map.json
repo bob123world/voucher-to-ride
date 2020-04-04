@@ -1,13 +1,13 @@
 {
     "cities": [
-        "Edingburch",
+        "Edinburgh",
         "London",
         "Dieppe",
         "Brest",
         "Paris",
         "Pamplona",
         "Madrid",
-        "Lisbao",
+        "Lisboa",
         "Cadiz",
         "Barcelona",
         "Amsterdam",
@@ -50,7 +50,7 @@
     ],
     "connections": [
         {
-            "city1": "Edinburch",
+            "city1": "Edinburgh",
             "city2": "London",
             "color": "orange",
             "distance": 5,
@@ -58,7 +58,7 @@
             "tunnel": false
         },
         {
-            "city1": "Edinburch",
+            "city1": "Edinburgh",
             "city2": "London",
             "color": "black",
             "distance": 5,
@@ -795,7 +795,7 @@
         },
         {
             "city1": "Roma",
-            "city2": "venezia",
+            "city2": "Venezia",
             "color": "black",
             "distance": 2,
             "locomotives": 0,
