@@ -2,25 +2,44 @@ import os
 import json
 import logging
 from telegram import (ReplyKeyboardMarkup, ReplyKeyboardRemove)
-from telegram.ext import (Updater, CommandHandler, MessageHandler, Filters, ConversationHandler)
+from telegram.ext import (Updater, CommandHandler, MessageHandler, Filters, ConversationHandler, PicklePersistence)
 
 # Enable logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 logger = logging.getLogger(__name__)
 
-def start(update, context):
-    update.message.reply_text('Hello, \n\nWelcome to Bobbie\'s Venitian Hotel & Casino\nCome and play with us!\n\nWe are playing Ticket To Ride tonight...\nUse /add and a color to add yourself to the game!\nPress /help to show the menu\n\nYou are now a spectator!')
-    chat_id = update.message.chat_id
-    data = json_load()
-    data["spectators"].append(chat_id)
-    json_save(data)
-    available_player_colors = []
-    for player in data["players"]:
-        if player["chat_id"] < 1:
-            available_player_colors.append(player["color"])
+START, SELECTION, OPTIONS = range(3)
 
-    update.message.reply_text("Available player colors are: " + str(available_player_colors))
+option_keyboard = [["Get Market Card", "Build Route"],
+                  ["Build Station", "Get New Tickets"],
+                  ["Deck", "Market", "Overview", "Map"],
+                  ["Routes", "City", "Your Routes", "Player"],
+                  ["Longest Route", "Points", "Help"]]
+
+def start(update, context):
+    reply_text = ""
+    data = json_load()
+    present = False
+    for player in data["players"]:
+        if update.massage.chat_id == player["chat_id"]:
+            reply_text += "Welcome back to Bobbie's Venetian Hotel & Casino! \n\n We are still playing ticket to ride!!!\n\n"
+            reply_text += "Your color is: " + player["color"]
+            markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
+            present = True
+
+    if not present:
+        reply_text = "Hello, \n\nWelcome to Bobbie\'s Venitian Hotel & Casino\nCome and play with us!\n\nWe are playing Ticket To Ride tonight...\nChoose an available color to add yourself to the game!\n\nYou are now a spectator!"
+        data["spectators"].append(update.message.chat_id)
+        json_save(data)
+        available_player_colors = []
+        for player in data["players"]:
+            if player["chat_id"] < 1:
+                available_player_colors.append([player["color"]])
+    
+        markup = ReplyKeyboardMarkup(available_player_colors, one_time_keyboard=True)
+
+    update.message.reply_text(reply_text, reply_markup=markup)
 
 def restart(update, context):
     """Restart the game"""
@@ -329,8 +348,42 @@ def error(update, context):
     logger.warning('Update "%s" caused error "%s"', update, context.error)
 
 def main():
-    updater = Updater("", use_context=True)
+    # Get configuration
+    config = {}
+    try:
+        config = json.load(open("config.json"))
+    except:
+        logger.critical("File Not found: config.json")
+        exit()
+
+    # Initialize Telegram bot
+    pp = PicklePersistence(filename="bobbieventianbot")
+    updater = Updater(config["telegram"]["token"], persistence= pp, use_context=True)
     dp = updater.dispatcher
+
+    data = json_load()
+    aplayers = ""
+    for player in data["players"]:
+        if player["chat_id"] < 1:
+            aplayers += player["color"] + "|"
+
+    aplayers = aplayers[:-1]
+
+    option_handler = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+
+        states = {
+            START: [MessageHandler(Filters.regex("^(" + aplayers + ")$"), add),]
+            #OPTIONS: 
+        },
+
+        fallbacks = [MessageHandler(Filters.regex("^Done"), start)],
+        name = "ticket_to_ride",
+        persistent= True
+
+    )
+
+    dp.add_handler(option_handler)
 
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(CommandHandler("add", add))
