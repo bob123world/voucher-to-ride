@@ -10,7 +10,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 logger = logging.getLogger(__name__)
 
-SELECTION, OPTIONS, CITY, FULLCITY, ROUTE, RETURN, MARKET = range(7)
+SELECTION, OPTIONS, CITY, FULLCITY, ROUTE, RETURN, MARKET, TICKET, STATION = range(9)
 
 option_keyboard = [["Get Market Card", "Build Route"],
                   ["Build Station", "Get New Tickets"],
@@ -375,44 +375,65 @@ def choose_player():
     pass
 
 def choose_market(update, context):
+    """List the cards in the market place"""
     reply_text = "Choose a card to pick"
     data = json_load()
-    market_cards = []
-    new_list = []
-    i = 0
-    for card in data["market"]:
-        if i > 0:
-            new_list.append(card)
-            market_cards.append(new_list)
-            i = 0
-        else:
-            i = 1
-            new_list = [card]
-    new_list.append("random")
-    market_cards.append(new_list)
-    market_cards.append(["Back"])
-    markup = ReplyKeyboardMarkup(market_cards, one_time_keyboard=True)
-    update.message.reply_text(reply_text, reply_markup=markup)
-
-    return OPTIONS
+    if your_turn(data, update):
+        market_cards = []
+        new_list = []
+        i = 0
+        for card in data["market"]:
+            if i > 0:
+                new_list.append(card)
+                market_cards.append(new_list)
+                i = 0
+            else:
+                i = 1
+                new_list = [card]
+        new_list.append("random")
+        market_cards.append(new_list)
+        market_cards.append(["Back"])
+        markup = ReplyKeyboardMarkup(market_cards, one_time_keyboard=True)
+        update.message.reply_text(reply_text, reply_markup=markup)
+        return MARKET
+    else:
+        markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
+        update.message.reply_text("", reply_markup=markup)
+        return RETURN
 
 def pick_market(update, context):
+    """Pick a card in the market place and check if we need to continue"""
     choice = update.message.text
+    if choice in "Back":
+        markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
+        update.message.reply_text("", reply_markup=markup)
+        return RETURN
     reply_text = ""
     data = json_load()
     for player in data["players"]:
         if update.message.chat_id == player["chat_id"]:
-            if choice in data["market"]:
+            if "second_pick" in context.user_data:
+                del context.user_data['second_pick']
+                index = data["market"].index(choice)
+                player["cards"].append(data["market"][index])
+                data["market"][index] = next_card(data)
+                next_turn(data)
+                json_save(data)
+                return RETURN
+            elif choice in data["market"]:
+                context.user_data['second_pick'] = True
                 index = data["market"].index(choice)
                 player["cards"].append(data["market"][index])
                 data["market"][index] = next_card(data)
                 if choice in "locomotive":
+                    next_turn(data, update)
                     json_save(data)
                     return RETURN
                 else:
                     json_save(data)
                     return MARKET
             elif choice in "random":
+                context.user_data['second_pick'] = True
                 player["cards"].append(next_card(data))
                 json_save(data)
                 return MARKET
@@ -461,6 +482,33 @@ def broadcast(data, message):
         response = requests.get(send_text)
 
     return response.json()
+
+def your_turn(data, update):
+    """Check if it's your turn"""
+    found = False
+    for player in data["players"]:
+        if player["color"] in data["turn"]:
+            if player["chat_id"] == update.message.chat_id:
+                found = True
+            
+    if not found:
+        update.message.reply_text("It's not your turn at the moment!")
+        return False
+
+    return True
+
+def next_turn(data):
+    """Go to player for the next turn"""
+    index = data["sequence"].index(data["turn"])
+    if index == (len(data["sequence"]) - 1):
+        data["turn"] = data["sequence"][0]
+    else:
+        data["turn"] = data["sequence"][index]
+    
+    for player in data["player"]:
+        if data["turn"] in player["color"]:
+            broadcast("Next turn for: " + player["name"] + " - " + player["color"])
+    json_save(data)
 
 def json_load():
     data = {}
