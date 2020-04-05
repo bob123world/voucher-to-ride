@@ -14,7 +14,7 @@ def main(numplay, game):
         if i < numplay:
             player["name"] = ""
             player["chat_id"] = 0
-            player["cards"] = ""
+            player["cards"] = []
             player["points"] = 0
             player["stations"] = ["unknown","unknown","unknown"]
             data["players"].append(player)

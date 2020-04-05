@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import requests
 from telegram import (ReplyKeyboardMarkup, ReplyKeyboardRemove)
 from telegram.ext import (Updater, CommandHandler, MessageHandler, Filters, ConversationHandler, PicklePersistence)
 
@@ -9,7 +10,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 logger = logging.getLogger(__name__)
 
-START, SELECTION, OPTIONS = range(3)
+SELECTION, OPTIONS, CITY, FULLCITY, ROUTE, RETURN, MARKET = range(7)
 
 option_keyboard = [["Get Market Card", "Build Route"],
                   ["Build Station", "Get New Tickets"],
@@ -32,31 +33,18 @@ def start(update, context):
         reply_text = "Hello, \n\nWelcome to Bobbie\'s Venitian Hotel & Casino\nCome and play with us!\n\nWe are playing Ticket To Ride tonight...\nChoose an available color to add yourself to the game!\n\nYou are now a spectator!"
         data["spectators"].append(update.message.chat_id)
         json_save(data)
-        available_player_colors = list_available_colors(data, True)  
-    
+        available_player_colors = list_available_colors(data, True)    
         markup = ReplyKeyboardMarkup(available_player_colors, one_time_keyboard=True)
 
     update.message.reply_text(reply_text, reply_markup=markup)
     return SELECTION
 
-def restart(update, context):
-    """Restart the game"""
-    pass
-
-def pick(update, context):
-    """Pick a cart"""
-    pass
-
-def route(update, context):
-    """Create a route"""
-    pass
-
 def add(update, context):
-    color = update.message.text.lower()
+    choice = update.message.text.lower()
     reply_text = ""
     data = json_load()
     for player in data["players"]:
-        if color in player["color"]:
+        if choice in player["color"]:
             if player["chat_id"] < 1:
                 player["chat_id"] = update.message.chat_id
                 player["name"] = update.message.from_user.first_name
@@ -98,19 +86,8 @@ def deck(update, context):
                 response += "All stations build in: " + player["stations"][0] + ","+ player["stations"][1] + ","+ player["stations"][2] + "\n"
             
             response += "\nTrains left: " + str(player["trains"])
-
-    markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)        
-    update.message.reply_text(response, reply_markup=markup)
-    return OPTIONS
-
-def market(update, context):
-    """Get the marketplace"""
-    data = json_load()
-    response = ""
-    for i,card in enumerate(data["market"]):
-        response += str(i+1) + " " + card + "\n"
-
-    markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)        
+    
+    markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
     update.message.reply_text(response, reply_markup=markup)
     return OPTIONS
 
@@ -268,42 +245,6 @@ def player(update, context):
 def points(update, context):
     update.message.reply_text("To Be Implemented!!!")
 
-def city(update, context):
-    """Get city details"""
-    city = context.args[0]
-    data = json_load()
-    
-    response = "routes in this city:\n"
-    i = 0
-    for route in data["routes"]:
-        if city in route["city1"] or city in route["city2"]:
-            i += 1
-            response += route["city1"] + " - " + route["city2"] + " "
-            if len(route["player"]) < 1:
-                response += "open "
-            else:
-                response += route["player"] + " "
-            response += "distance: " + str(route["distance"]) + " color: " + route["color"]
-            if route["tunnel"]:
-                response += " tunnel"
-
-            if route["locomotives"] > 0:
-                response += " locomotives: " + str(route["locomotives"])
-            
-            response += "\n"
-        
-    if i < 1:
-        update.message.reply_text("City is unknown!")
-    else:
-        build = False
-        for player in data["players"]:
-            if city in player["stations"]:
-                build = True
-                response += "Station build for player: " + player["color"]
-        if not build:
-            response += "No station build in this city yet."
-    update.message.reply_text(response)
-
 def help(update, context):
     """Help section"""
     response = "HELP\n\n"
@@ -318,7 +259,13 @@ def help(update, context):
     response += "/player\tGet information about a player, example: /player green\n"
     response += "/points\tGet the points overview\n"
     response += "/city\tGet information about the city, example: /city London\n"
-    update.message.reply_text(response)
+    markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
+    update.message.reply_text(response, reply_markup=markup)
+
+    return SELECTION
+
+def send_map():
+    pass
 
 def get_player(data, id):
     p = None
@@ -326,6 +273,168 @@ def get_player(data, id):
         if id == player["chat_id"]:
             p = player
     return p
+
+def build_station():
+    pass
+
+def get_new_tickets():
+    pass
+
+def choose_city(update, context):
+    """List all first letters of available cities"""
+    choice = update.message.text
+    data = json_load()
+    first_letters = []
+
+    if choice in "Back":
+        markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
+        update.message.reply_text("", reply_markup=markup)
+        return RETURN
+
+    for city in data["cities"]:
+        first_letters.append(city[0:1])
+    first_letters = set(first_letters)
+    first_letters = [list(first_letters)]
+    first_letters.append(["Back"])
+    reply_text = "Choose the first letter of the city you want to search, where you want to build your station or where your route starts."
+    markup = ReplyKeyboardMarkup(first_letters, one_time_keyboard=True)
+    update.message.reply_text(reply_text, reply_markup=markup)
+    return FULLCITY
+
+def full_city(update, context):
+    """List all first letters of available cities"""
+    choice = update.message.text
+    reply_text = ""
+    data = json_load()
+    first_letters = []
+    for city in data["cities"]:
+        first_letters.append(city[0:1])
+    first_letters = set(first_letters)
+    first_letters = list(first_letters)
+
+    if choice in "Back":
+        markup = ReplyKeyboardMarkup(first_letters, one_time_keyboard=True)
+        update.message.reply_text("", reply_markup=markup)
+        return FULLCITY
+
+    if choice not in first_letters:
+        reply_text = "Given input is not the first letter of city."
+        markup = ReplyKeyboardMarkup(first_letters, one_time_keyboard=True)
+        return FULLCITY
+    else:
+        reply_text = "Choose the the city:"
+        cities = []
+        for city in data["cities"]:
+            if choice in city[0:1]:
+                cities.append([city])
+        cities.append(["Back"])
+        markup = ReplyKeyboardMarkup(cities, one_time_keyboard=True)
+        update.message.reply_text(reply_text, reply_markup=markup)
+    return CITY
+
+def city(update, context):
+    """Get city details"""
+    city = update.message.text
+    data = json_load()
+    
+    reply_text = "routes in this city:\n"
+    i = 0
+    for route in data["routes"]:
+        if city in route["city1"] or city in route["city2"]:
+            i += 1
+            reply_text += route["city1"] + " - " + route["city2"] + " "
+            if len(route["player"]) < 1:
+                reply_text += "open "
+            else:
+                reply_text += route["player"] + " "
+            reply_text += "distance: " + str(route["distance"]) + " color: " + route["color"]
+            if route["tunnel"]:
+                reply_text += " tunnel"
+
+            if route["locomotives"] > 0:
+                reply_text += " locomotives: " + str(route["locomotives"])
+            
+            reply_text += "\n"
+        
+    if i < 1:
+        update.message.reply_text("City is unknown!")
+    else:
+        build = False
+        for player in data["players"]:
+            if city in player["stations"]:
+                build = True
+                reply_text += "Station build for player: " + player["color"]
+        if not build:
+            reply_text += "No station build in this city yet."
+    markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
+    update.message.reply_text(reply_text, reply_markup=markup)
+
+    return OPTIONS
+
+def choose_player():
+    pass
+
+def choose_market(update, context):
+    reply_text = "Choose a card to pick"
+    data = json_load()
+    market_cards = []
+    new_list = []
+    i = 0
+    for card in data["market"]:
+        if i > 0:
+            new_list.append(card)
+            market_cards.append(new_list)
+            i = 0
+        else:
+            i = 1
+            new_list = [card]
+    new_list.append("random")
+    market_cards.append(new_list)
+    market_cards.append(["Back"])
+    markup = ReplyKeyboardMarkup(market_cards, one_time_keyboard=True)
+    update.message.reply_text(reply_text, reply_markup=markup)
+
+    return OPTIONS
+
+def pick_market(update, context):
+    choice = update.message.text
+    reply_text = ""
+    data = json_load()
+    for player in data["players"]:
+        if update.message.chat_id == player["chat_id"]:
+            if choice in data["market"]:
+                index = data["market"].index(choice)
+                player["cards"].append(data["market"][index])
+                data["market"][index] = next_card(data)
+                if choice in "locomotive":
+                    json_save(data)
+                    return RETURN
+                else:
+                    json_save(data)
+                    return MARKET
+            elif choice in "random":
+                player["cards"].append(next_card(data))
+                json_save(data)
+                return MARKET
+    
+def market(update, context):
+    """Get the marketplace"""
+    data = json_load()
+    response = ""
+    for i,card in enumerate(data["market"]):
+        response += str(i+1) + " " + card + "\n"
+
+    update.message.reply_text(response)
+
+def next_card(data):
+    card = data["deck"][-1]
+    data["deck"].pop()
+    return card
+
+def return_to_options(update, context):
+    markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
+    update.message.reply_text("", reply_markup=markup)
+    return OPTIONS
 
 def list_available_colors(data, doublelist = False):
     """Place available player colors in a list or a nested list"""
@@ -337,6 +446,21 @@ def list_available_colors(data, doublelist = False):
             else:
                 available_player_colors.append(player["color"])
     return available_player_colors
+
+def broadcast(data, message):
+    config = {}
+    try:
+        config = json.load(open("config.json"))
+    except:
+        logger.critical("File Not found: config.json")
+        exit()
+    
+    for player in data["players"]:
+        send_text = 'https://api.telegram.org/bot' + config["telegram"]["token"] + '/sendMessage?chat_id=' + player["id"] + '&parse_mode=Markdown&text=' + message
+
+        response = requests.get(send_text)
+
+    return response.json()
 
 def json_load():
     data = {}
@@ -362,24 +486,6 @@ def error(update, context):
     """Log Errors caused by Updates."""
     logger.warning('Update "%s" caused error "%s"', update, context.error)
 
-def choose_city():
-    pass
-
-def choose_market():
-    pass
-
-def choose_player():
-    pass
-
-def build_station():
-    pass
-
-def send_map():
-    pass
-
-def get_new_tickets():
-    pass
-
 def main():
     # Get configuration
     config = {}
@@ -395,8 +501,8 @@ def main():
     dp = updater.dispatcher
 
     data = json_load()
-    aplayers = ""
     availabe_colors = list_available_colors(data)
+    aplayers = ""
     for color in availabe_colors:
         aplayers += color + "|"
 
@@ -414,9 +520,13 @@ def main():
             MessageHandler(Filters.regex("^(Routes)$"), routes), MessageHandler(Filters.regex("^(City)$"), choose_city),
             MessageHandler(Filters.regex("^(Your Routes)$"), yroutes), MessageHandler(Filters.regex("^(Player)$"), choose_player),
             MessageHandler(Filters.regex("^(Longest Route)$"), lroute), MessageHandler(Filters.regex("^(Points)$"), points), MessageHandler(Filters.regex("^(Help)$"), help)],
+            FULLCITY: [MessageHandler(Filters.text, full_city),],
+            CITY: [MessageHandler(Filters.text, city),],
+            MARKET: [MessageHandler(Filters.text, pick_market),],
+            RETURN: [MessageHandler(Filters.text, return_to_options),],
         },
 
-        fallbacks = [MessageHandler(Filters.regex("^Done"), start)],
+        fallbacks = [MessageHandler(Filters.regex("^Done$"), start)],
         name = "ticket_to_ride",
         persistent= True
 
@@ -424,8 +534,6 @@ def main():
 
     dp.add_handler(option_handler)
 
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("add", add))
     dp.add_handler(CommandHandler("deck", deck))
     dp.add_handler(CommandHandler("market", market))
     dp.add_handler(CommandHandler("routes", routes))
@@ -433,9 +541,7 @@ def main():
     dp.add_handler(CommandHandler("aroutes", aroutes))
     dp.add_handler(CommandHandler("lroute", lroute))
     dp.add_handler(CommandHandler("overview", overview))
-    dp.add_handler(CommandHandler("player", player))
     dp.add_handler(CommandHandler("points", points))
-    dp.add_handler(CommandHandler("city", city))
     dp.add_handler(CommandHandler("help", help))
 
     # log all errors
