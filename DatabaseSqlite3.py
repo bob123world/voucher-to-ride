@@ -2,7 +2,7 @@ import logging
 import sqlite3
 import pandas as pd
 
-logger = logging.getLogger("elise-database")
+logger = logging.getLogger("__name__")
 
 class DatabaseSqlite3():
     def __init__(self, connection_string):
@@ -10,29 +10,48 @@ class DatabaseSqlite3():
         self.set_cursor(self.get_conn())
         self.set_type("sqlite3")
 
-        # COIN table
-        column_names = ["OPENTIME","OPEN","HIGH","LOW","CLOSE","VOLUME","QUASVOL","TAKERBASEVOL","TAKERQUOTEVOL"]
-        column_types = ["TEXT", "REAL", "REAL", "REAL", "REAL", "REAL", "REAL", "REAL", "REAL"]
-        column_extras = ["PRIMARY KEY NOT NULL", "NOT NULL", "NOT NULL", "NOT NULL","NOT NULL","NOT NULL", "NOT NULL", "", ""]
-        self.coin_columns = [column_names, column_types, column_extras]
+        # Player table
+        column_names = ["chat_id","name","trains","points","color"]
+        column_types = ["INTEGER", "TEXT", "INTEGER", "INTEGER", "TEXT"]
+        column_extras = ["PRIMARY KEY NOT NULL", "NOT NULL", "NOT NULL", "NOT NULL",""]
+        self.player_columns = [column_names, column_types, column_extras]
 
-        # COINS table
-        column_names = ["ID","NAME","IDENTIFIER","TYPE","PAIR","BUY","SELL","DECIMALS","BUYSTRATEGY","SELLSTRATEGY"]
-        column_types = ["INT", "TEXT", "TEXT", "TEXT", "TEXT", "INTEGER", "INTEGER", "INTEGER", "TEXT","TEXT"]
-        column_extras = ["PRIMARY KEY NOT NULL", "NOT NULL", "NOT NULL", "NOT NULL","NOT NULL","NOT NULL", "NOT NULL", "NOT NULL", "NOT NULL", "NOT NULL"]
-        self.coins_columns = [column_names, column_types, column_extras]
+        # City table
+        column_names = ["id","name","station"]
+        column_types = ["INTEGER", "TEXT", "INTEGER"]
+        column_extras = ["PRIMARY KEY NOT NULL", "NOT NULL", "NOT NULL"]
+        self.city_columns = [column_names, column_types, column_extras]
 
-        # PORTFOLIO table
-        column_names = ["ID","NAME","IDENTIFIER","TYPE","PAIR","BUY","SELL","DECIMALS","BUYSTRATEGY","SELLSTRATEGY"]
-        column_types = ["INT", "TEXT", "TEXT", "TEXT", "TEXT", "INTEGER", "INTEGER", "INTEGER", "TEXT","TEXT"]
-        column_extras = ["PRIMARY KEY NOT NULL", "NOT NULL", "NOT NULL", "NOT NULL","NOT NULL","NOT NULL", "NOT NULL", "NOT NULL", "NOT NULL", "NOT NULL"]
-        self.portfolio_columns = [column_names, column_types, column_extras]
+        # Route table
+        column_names = ["id","city1","city2","color","distance","locomotives","tunnel","owner"]
+        column_types = ["INTEGER", "TEXT", "TEXT", "TEXT", "INTEGER", "INTEGER", "INTEGER", "INTEGER"]
+        column_extras = ["PRIMARY KEY NOT NULL", "NOT NULL", "NOT NULL", "NOT NULL","NOT NULL","NOT NULL", "NOT NULL", "NOT NULL"]
+        self.route_columns = [column_names, column_types, column_extras]
 
-        # TRANSACTIONS table
-        column_names = ["STARTSTAMP","ENDSTAMP","COIN","AMOUNT","STARTPRICE","STOPPRICE","PERCENTAGE"]
-        column_types = ["TEXT", "TEXT", "TEXT", "TEXT", "REAL", "REAL", "REAL", "REAL"]
-        column_extras = ["NOT NULL", "NOT NULL", "NOT NULL", "NOT NULL","NOT NULL","NOT NULL", "NOT NULL"]
-        self.transactions_columns = [column_names, column_types, column_extras]
+        # Ticket table
+        column_names = ["id","city1","city2","value","owner"]
+        column_types = ["INTEGER", "INTEGER", "INTEGER", "INTEGER", "INTEGER"]
+        column_extras = ["NOT NULL", "NOT NULL", "NOT NULL", "NOT NULL","NOT NULL"]
+        self.ticket_columns = [column_names, column_types, column_extras]
+
+        # Card table
+        column_names = ["id","color","owner"]
+        column_types = ["INTEGER", "TEXT", "INTEGER"]
+        column_extras = ["NOT NULL", "NOT NULL", ""]
+        self.card_columns = [column_names, column_types, column_extras]
+
+        tables = self.table_info()
+        if "Player" not in tables:
+            self.create_table("Player", self.player_columns)
+        if "City" not in tables:
+            self.create_table("City", self.city_columns)
+        if "Route" not in tables:
+            self.create_table("Route", self.route_columns)
+        if "Ticket" not in tables:
+            self.create_table("Ticket", self.ticket_columns)
+        if "Card" not in tables:
+            self.create_table("Card", self.card_columns)
+        logger.info("All variables present in database!")
 
     def create_table(self, table_name, columns_info):
         """Create a table with table_name as name and columns_info as columns"""
