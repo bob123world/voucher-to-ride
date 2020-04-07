@@ -9,12 +9,18 @@ def main(numplay, game):
     data["spectators"] = []
     data["players"] = []
     data["sequence"] = []
+
+    # Insert cards
+    cards = json_load("train_cards", game)
+    cards_deck = create_shuffle_cards(cards)
+
     players = json_load("pieces", game)
     for i, player in enumerate(players):
         if i < numplay:
             player["name"] = ""
             player["chat_id"] = 0
-            player["cards"] = []
+            cards_deck, cards_player = assign_cards(cards_deck, 4)
+            player["cards"] = cards_player
             player["points"] = 0
             player["stations"] = ["unknown","unknown","unknown"]
             data["players"].append(player)
@@ -22,15 +28,13 @@ def main(numplay, game):
 
     data["turn"] = data["players"][0]["color"]
 
-    # Insert cards
-    cards = json_load("train_cards", game)
-    data["deck"] = create_shuffle_cards(cards)
-
     data["market"] = []
     for i in range(0,5):
-        data["market"].append(data["deck"][-1])
-        data["deck"].pop()
+        cards_deck, cards_market = assign_cards(cards_deck, 5)
+        data["market"] = cards_market
     
+    data["deck"] = cards_deck
+
     # Routes
     routes = json_load("route_cards", game)
     data["tickets"] = shuffle_routes(routes["normal"])
@@ -80,6 +84,13 @@ def shuffle_routes(cards):
     random.shuffle(cards)
     return cards
 
+def assign_cards(cards, amount):
+    assigned_cards = []
+    for i in range(0, amount):
+        assigned_cards.append(cards[-1])
+        cards = cards[1:] + cards[:1]
+    return cards, assigned_cards
+
 def json_load(path, game):
     dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), path)
     for filename in os.listdir(dir):
@@ -100,4 +111,4 @@ def json_save(data):
         print(e)
 
 if __name__ == "__main__":
-    main(4, "europe")
+    main(3, "europe")

@@ -288,8 +288,8 @@ def choose_city(update, context):
 
     if choice in "Back":
         markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
-        update.message.reply_text("", reply_markup=markup)
-        return RETURN
+        update.message.reply_text("Going Back...", reply_markup=markup)
+        return OPTIONS
 
     for city in data["cities"]:
         first_letters.append(city[0:1])
@@ -379,62 +379,68 @@ def choose_market(update, context):
     reply_text = "Choose a card to pick"
     data = json_load()
     if your_turn(data, update):
-        market_cards = []
-        new_list = []
-        i = 0
-        for card in data["market"]:
-            if i > 0:
-                new_list.append(card)
-                market_cards.append(new_list)
-                i = 0
-            else:
-                i = 1
-                new_list = [card]
-        new_list.append("random")
-        market_cards.append(new_list)
-        market_cards.append(["Back"])
-        markup = ReplyKeyboardMarkup(market_cards, one_time_keyboard=True)
+        market = data["market"]
+        market.append("random")
+        market.append("Back")
+        market_keyboard = make_nested_lists(market, 2)
+        markup = ReplyKeyboardMarkup(market_keyboard, one_time_keyboard=True)
         update.message.reply_text(reply_text, reply_markup=markup)
         return MARKET
     else:
         markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
-        update.message.reply_text("", reply_markup=markup)
-        return RETURN
+        update.message.reply_text("It's not your turn at the moment!", reply_markup=markup)
+        return OPTIONS
 
 def pick_market(update, context):
     """Pick a card in the market place and check if we need to continue"""
     choice = update.message.text
     if choice in "Back":
         markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
-        update.message.reply_text("", reply_markup=markup)
-        return RETURN
+        update.message.reply_text("Going Back...", reply_markup=markup)
+        return OPTIONS
     reply_text = ""
     data = json_load()
     for player in data["players"]:
         if update.message.chat_id == player["chat_id"]:
             if "second_pick" in context.user_data:
-                del context.user_data['second_pick']
                 index = data["market"].index(choice)
                 player["cards"].append(data["market"][index])
-                data["market"][index] = next_card(data)
+                data["deck"], random_card = assign_cards(data["deck"], 1)
+                data["market"][index] = random_card
                 next_turn(data)
                 json_save(data)
-                return RETURN
+                markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
+                update.message.reply_text("You have picked " + choice + " from the market", reply_markup=markup)
+                del context.user_data['second_pick']
+                return OPTIONS
             elif choice in data["market"]:
-                context.user_data['second_pick'] = True
                 index = data["market"].index(choice)
                 player["cards"].append(data["market"][index])
                 data["market"][index] = next_card(data)
                 if choice in "locomotive":
                     next_turn(data, update)
                     json_save(data)
-                    return RETURN
+                    markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
+                    update.message.reply_text("You have picked " + choice + " from the market", reply_markup=markup)
+                    return OPTIONS
                 else:
+                    context.user_data['second_pick'] = True
+                    index = data["market"].index(choice)
+                    player["cards"].append(data["market"][index])
+                    data["deck"], random_card = assign_cards(data["deck"], 1)
+                    data["market"][index] = random_card
+                    market = data["market"]
+                    market.remove("locomotive")
+                    market.append("random")
+                    market_keyboard = make_nested_lists(market, 2)
+                    markup = ReplyKeyboardMarkup(market_keyboard, one_time_keyboard=True)
+                    update.message.reply_text("You have picked " + choice + " from the market", reply_markup=markup)
                     json_save(data)
                     return MARKET
             elif choice in "random":
                 context.user_data['second_pick'] = True
-                player["cards"].append(next_card(data))
+                data["deck"], random_card = assign_cards(data["deck"], 1)
+                player["cards"].append(random_card)
                 json_save(data)
                 return MARKET
     
@@ -454,8 +460,15 @@ def next_card(data):
 
 def return_to_options(update, context):
     markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
-    update.message.reply_text("", reply_markup=markup)
+    update.message.reply_text("-", reply_markup=markup)
     return OPTIONS
+
+def assign_cards(cards, amount):
+    assigned_cards = []
+    for i in range(0, amount):
+        assigned_cards.append(cards[-1])
+        cards = cards[1:] + cards[:1]
+    return cards, assigned_cards
 
 def list_available_colors(data, doublelist = False):
     """Place available player colors in a list or a nested list"""
@@ -468,6 +481,30 @@ def list_available_colors(data, doublelist = False):
                 available_player_colors.append(player["color"])
     return available_player_colors
 
+def make_nested_lists(data_list, items_each_line = 3):
+    """Makes nested lists with a shape to use as keyboard in markup"""
+    outer_list = []
+    inner_list = []
+    start_index = 0
+    stop_index = len(data_list)
+    index = start_index
+    inner_index = 1
+    while index < stop_index:
+        inner_list.append(data_list[index])
+        if inner_index < items_each_line:
+            inner_index += 1
+        else:
+            outer_list.append(inner_list)
+
+            inner_list = []
+            inner_index = 1
+        
+        index += 1
+    if len(inner_list) > 0:
+        outer_list.append(inner_list)
+
+    return outer_list
+
 def broadcast(data, message):
     config = {}
     try:
@@ -477,7 +514,7 @@ def broadcast(data, message):
         exit()
     
     for player in data["players"]:
-        send_text = 'https://api.telegram.org/bot' + config["telegram"]["token"] + '/sendMessage?chat_id=' + player["id"] + '&parse_mode=Markdown&text=' + message
+        send_text = 'https://api.telegram.org/bot' + config["telegram"]["token"] + '/sendMessage?chat_id=' + str(player["chat_id"]) + '&parse_mode=Markdown&text=' + message
 
         response = requests.get(send_text)
 
@@ -492,7 +529,6 @@ def your_turn(data, update):
                 found = True
             
     if not found:
-        update.message.reply_text("It's not your turn at the moment!")
         return False
 
     return True
@@ -503,12 +539,13 @@ def next_turn(data):
     if index == (len(data["sequence"]) - 1):
         data["turn"] = data["sequence"][0]
     else:
-        data["turn"] = data["sequence"][index]
+        data["turn"] = data["sequence"][index+1]
     
-    for player in data["player"]:
+    for player in data["players"]:
         if data["turn"] in player["color"]:
-            broadcast("Next turn for: " + player["name"] + " - " + player["color"])
+            broadcast(data, "Next turn for: " + player["name"] + " - " + player["color"])
     json_save(data)
+    logger.info("Next turn for: " + player["name"] + " - " + player["color"])
 
 def json_load():
     data = {}
@@ -571,7 +608,6 @@ def main():
             FULLCITY: [MessageHandler(Filters.text, full_city),],
             CITY: [MessageHandler(Filters.text, city),],
             MARKET: [MessageHandler(Filters.text, pick_market),],
-            RETURN: [MessageHandler(Filters.text, return_to_options),],
         },
 
         fallbacks = [MessageHandler(Filters.regex("^Done$"), start)],
