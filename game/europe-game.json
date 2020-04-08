@@ -1,0 +1,23 @@
+{
+    "single_where_double": 3,
+    "longest_route": true,
+    "schips": false,
+    "stations": {
+        "enabled": true,
+        "amount": 3
+    },
+    "ports" : {
+        "enabled": false,
+        "amount": 0
+    },
+    "scores": {
+        "1" : 1,
+        "2" : 2,
+        "3" : 4,
+        "4" : 7,
+        "6" : 15,
+        "8" : 21,
+        "station": 4,
+        "longest_route" : 10
+    }
+}

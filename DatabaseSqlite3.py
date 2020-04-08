@@ -11,33 +11,33 @@ class DatabaseSqlite3():
         self.set_type("sqlite3")
 
         # Player table
-        column_names = ["chat_id","name","trains","points","color"]
-        column_types = ["INTEGER", "TEXT", "INTEGER", "INTEGER", "TEXT"]
-        column_extras = ["PRIMARY KEY NOT NULL", "NOT NULL", "NOT NULL", "NOT NULL",""]
+        column_names = ["chat_id","name","trains","stations","points","color"]
+        column_types = ["INTEGER", "TEXT", "INTEGER", "INTEGER", "INTEGER","TEXT"]
+        column_extras = ["PRIMARY KEY NOT NULL", "NOT NULL", "NOT NULL", "NOT NULL", "NOT NULL",""]
         self.player_columns = [column_names, column_types, column_extras]
 
         # City table
         column_names = ["id","name","station"]
         column_types = ["INTEGER", "TEXT", "INTEGER"]
-        column_extras = ["PRIMARY KEY NOT NULL", "NOT NULL", "NOT NULL"]
+        column_extras = ["PRIMARY KEY AUTOINCREMENT", "NOT NULL", ""]
         self.city_columns = [column_names, column_types, column_extras]
 
         # Route table
         column_names = ["id","city1","city2","color","distance","locomotives","tunnel","owner"]
         column_types = ["INTEGER", "TEXT", "TEXT", "TEXT", "INTEGER", "INTEGER", "INTEGER", "INTEGER"]
-        column_extras = ["PRIMARY KEY NOT NULL", "NOT NULL", "NOT NULL", "NOT NULL","NOT NULL","NOT NULL", "NOT NULL", "NOT NULL"]
+        column_extras = ["PRIMARY KEY AUTOINCREMENT", "NOT NULL", "NOT NULL", "NOT NULL","NOT NULL","NOT NULL", "NOT NULL", ""]
         self.route_columns = [column_names, column_types, column_extras]
 
         # Ticket table
-        column_names = ["id","city1","city2","value","owner"]
-        column_types = ["INTEGER", "INTEGER", "INTEGER", "INTEGER", "INTEGER"]
-        column_extras = ["NOT NULL", "NOT NULL", "NOT NULL", "NOT NULL","NOT NULL"]
+        column_names = ["id","city1","city2","value","special","owner"]
+        column_types = ["INTEGER", "INTEGER", "INTEGER", "INTEGER", "INTEGER", "INTEGER"]
+        column_extras = ["PRIMARY KEY AUTOINCREMENT", "NOT NULL", "NOT NULL", "NOT NULL", "NOT NULL",""]
         self.ticket_columns = [column_names, column_types, column_extras]
 
         # Card table
         column_names = ["id","color","owner"]
         column_types = ["INTEGER", "TEXT", "INTEGER"]
-        column_extras = ["NOT NULL", "NOT NULL", ""]
+        column_extras = ["PRIMARY KEY AUTOINCREMENT", "NOT NULL", ""]
         self.card_columns = [column_names, column_types, column_extras]
 
         tables = self.table_info()
@@ -51,7 +51,7 @@ class DatabaseSqlite3():
             self.create_table("Ticket", self.ticket_columns)
         if "Card" not in tables:
             self.create_table("Card", self.card_columns)
-        logger.info("All variables present in database!")
+        logger.info("All tables present in database!")
 
     def create_table(self, table_name, columns_info):
         """Create a table with table_name as name and columns_info as columns"""
@@ -110,8 +110,8 @@ class DatabaseSqlite3():
         where is a string that defines which records to update
         """
         query = "UPDATE "  + table_name + " SET " 
-        for column, value in data:
-            query += column + " = " + value + " ,"
+        for column, value in data.items():
+            query += column + " = " + str(value) + " ,"
         query = query[:-1]
         query += " WHERE " + where
         

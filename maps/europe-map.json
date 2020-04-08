@@ -124,7 +124,7 @@
         {
             "city1": "Cadiz",
             "city2": "Madrid",
-            "color": "Orange",
+            "color": "orange",
             "distance": 3,
             "locomotives": 0,
             "tunnel": false
