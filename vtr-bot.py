@@ -545,12 +545,14 @@ class VTR_BOT():
         """Choose a card from the market place"""
         db = DatabaseSqlite3(self.url)
         # check turn
+        context.user_data['second_pick'] = False
         market_cards = db.get_data_table("Card", db.card_columns, "id = 1")
         market_list = []
         for card in market_cards:
             market_list.append(card[1])
         market_list.append("random")
-        market_keyboard = self.make_nested_lists(market_list, 4)
+        market_keyboard = self.make_nested_lists(market_list, 2)
+        market_keyboard.append(["Back"])
         markup = ReplyKeyboardMarkup(market_keyboard, one_time_keyboard=True)
         update.message.reply_text("Select a card from the market:", reply_markup=markup)
         db.close()
@@ -559,6 +561,42 @@ class VTR_BOT():
     def pick_market(self, update, context):
         """Pick a card from the market"""
         choice = update.message.text()
+        if choice in "Back":
+            markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
+            update.message.reply_text("Going back...", reply_markup=markup)
+            return OPTIONS
+        db = DatabaseSqlite3(self.url)
+        if choice in "random":
+            self.assign_cards(db, update.message.chat_id)
+            if context.user_data['second_pick']:
+                markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
+                update.message.reply_text("Selected a random card :", reply_markup=markup)
+                # show deck
+                # next turn
+                # broadcast
+                db.close()
+                return OPTIONS
+            else:
+                market_cards = db.get_data_table("Card", db.card_columns, "id = 1 AND color NOT LIKE locomotive")
+                market_list = []
+                for card in market_cards:
+                    market_list.append(card[1])
+                market_list.append("random")
+                market_keyboard = self.make_nested_lists(market_list, 2)
+                market_keyboard.append(["Back"])
+                markup = ReplyKeyboardMarkup(market_keyboard, one_time_keyboard=True)
+                update.message.reply_text("Select a card from the market:", reply_markup=markup)
+                # broadcast
+                db.close()
+                return MARKET
+            
+        market_colors = db.get_data_table("Card", [["color"]], "id = 1")
+        found = False
+        for color in market_colors:
+            if choice in color:
+                found = True
+        if not found:
+            pass
         return OPTIONS
 
     def deck(self, update, context):
