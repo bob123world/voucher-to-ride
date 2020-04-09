@@ -5,7 +5,7 @@ import pandas as pd
 logger = logging.getLogger("__name__")
 
 class DatabaseSqlite3():
-    def __init__(self, connection_string):
+    def __init__(self, connection_string, check=False):
         self.set_conn(connection_string)
         self.set_cursor(self.get_conn())
         self.set_type("sqlite3")
@@ -40,18 +40,19 @@ class DatabaseSqlite3():
         column_extras = ["PRIMARY KEY AUTOINCREMENT", "NOT NULL", ""]
         self.card_columns = [column_names, column_types, column_extras]
 
-        tables = self.table_info()
-        if "Player" not in tables:
-            self.create_table("Player", self.player_columns)
-        if "City" not in tables:
-            self.create_table("City", self.city_columns)
-        if "Route" not in tables:
-            self.create_table("Route", self.route_columns)
-        if "Ticket" not in tables:
-            self.create_table("Ticket", self.ticket_columns)
-        if "Card" not in tables:
-            self.create_table("Card", self.card_columns)
-        logger.info("All tables present in database!")
+        if check:
+            tables = self.table_info()
+            if "Player" not in tables:
+                self.create_table("Player", self.player_columns)
+            if "City" not in tables:
+                self.create_table("City", self.city_columns)
+            if "Route" not in tables:
+                self.create_table("Route", self.route_columns)
+            if "Ticket" not in tables:
+                self.create_table("Ticket", self.ticket_columns)
+            if "Card" not in tables:
+                self.create_table("Card", self.card_columns)
+            logger.info("All tables present in database!")
 
     def create_table(self, table_name, columns_info):
         """Create a table with table_name as name and columns_info as columns"""
@@ -103,7 +104,7 @@ class DatabaseSqlite3():
             logger.error(e)
             
 
-    def update_data_table(self, table_name, data, where):
+    def update_data_table(self, table_name, data, where, string=False):
         """
         Update a row in a table specified by table_name
         data is a dict of the columns and data you want to update
@@ -111,7 +112,10 @@ class DatabaseSqlite3():
         """
         query = "UPDATE "  + table_name + " SET " 
         for column, value in data.items():
-            query += column + " = " + str(value) + " ,"
+            if string:
+                query += column + " = '" + str(value) + "' ,"
+            else:
+                query += column + " = " + str(value) + " ,"
         query = query[:-1]
         query += " WHERE " + where
         
@@ -238,6 +242,10 @@ class DatabaseSqlite3():
             logger.error("Unable to get column info of: " + table_name)
             logger.error(e)
         return column_names
+
+    def close(self):
+        """Close database connection"""
+        self.conn.close()
 
     ### GET ###
 

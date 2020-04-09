@@ -18,7 +18,7 @@ SELECTION, OPTIONS, CITY, ROUTE, MARKET, TICKET, STATION, RESTART = range(8)
 option_keyboard = [["Get Market Card", "Build Route"],
                   ["Build Station", "Get New Tickets"],
                   ["Deck", "Market", "Overview", "Map"],
-                  ["Routes", "City", "Your Routes", "Player"],
+                  ["Routes", "City", "Your Routes"],
                   ["Longest Route", "Points", "Help"]]
 
 class VTR_BOT():
@@ -35,7 +35,8 @@ class VTR_BOT():
             exit()
 
         ### Initialize database
-        self.db = DatabaseSqlite3(config["database"]["url"])
+        self.url = config["database"]["url"]
+        self.db = DatabaseSqlite3(self.url, True)
 
         ### Initialize Game configuration
         # Check if all cards are present:
@@ -218,11 +219,30 @@ class VTR_BOT():
         self.nbr_players_for_single_route = game["single_where_double"]
         self.longest_route_active = game["longest_route"]
         self.schips_active = game["schips"]
+        self.stations_active = game["stations"]["enabled"]
         self.scores = game["scores"]
 
+        # Set game pieces
+        present = False
+        pieces = {}
+        for pieces_config in os.listdir(os.path.join(self.path, "pieces")):
+            if map_name in pieces_config:
+                try:
+                    pieces = json.load(open(os.path.join(self.path, "pieces", pieces_config)))
+                    present = True
+                except Exception as e:
+                    logger.error(e)
 
-        self.default_trains = ""
+        if not present:
+            logger.critical("No pieces config file found for this map_name")
+            exit()
+        self.colors_players = []
+        self.amount_trains = pieces[0]["trains"]
 
+        for piece in pieces:
+            self.colors_players.append(piece["color"])
+        if self.stations_active:
+            self.amount_stations = game["stations"]["amount"]
         
         # Initialize Telegram bot
         pp = PicklePersistence(filename="bobbieventianbot")
@@ -233,17 +253,18 @@ class VTR_BOT():
             entry_points=[CommandHandler("start", self.start)],
             states = {
                 SELECTION: [MessageHandler(Filters.regex("^(yellow|black|red|green|blue)$"), self.add),],
-                OPTIONS: [MessageHandler(Filters.regex("^(Get Market Card)$"), choose_market), MessageHandler(Filters.regex("^(Build Route)$"), choose_city),
-                MessageHandler(Filters.regex("^(Build Station)$"), build_station), MessageHandler(Filters.regex("^(Get New Tickets)$"), get_new_tickets),
-                MessageHandler(Filters.regex("^(Deck)$"), deck), MessageHandler(Filters.regex("^(Market)$"), market),
-                MessageHandler(Filters.regex("^(Overview)$"), overview), MessageHandler(Filters.regex("^(Map)$"), send_map),
-                MessageHandler(Filters.regex("^(Routes)$"), routes), MessageHandler(Filters.regex("^(City)$"), choose_city),
-                MessageHandler(Filters.regex("^(Your Routes)$"), yroutes), MessageHandler(Filters.regex("^(Player)$"), choose_player),
-                MessageHandler(Filters.regex("^(Longest Route)$"), lroute), MessageHandler(Filters.regex("^(Points)$"), points), MessageHandler(Filters.regex("^(Help)$"), help)],
-                CITY: [MessageHandler(Filters.text, city),],
-                MARKET: [MessageHandler(Filters.text, pick_market),],
+                OPTIONS: [MessageHandler(Filters.regex("^(Get Market Card)$"), self.choose_market), MessageHandler(Filters.regex("^(Build Route)$"), self.build_route),
+                MessageHandler(Filters.regex("^(Build Station)$"), self.build_station), MessageHandler(Filters.regex("^(Get New Tickets)$"), self.choose_tickets),
+                MessageHandler(Filters.regex("^(Deck)$"), self.deck), MessageHandler(Filters.regex("^(Market)$"), self.market),
+                MessageHandler(Filters.regex("^(Overview)$"), self.overview), MessageHandler(Filters.regex("^(Map)$"), self.map),
+                MessageHandler(Filters.regex("^(Routes)$"), self.all_routes), MessageHandler(Filters.regex("^(City)$"), self.city_information),
+                MessageHandler(Filters.regex("^(Your Routes)$"), self.your_routes), MessageHandler(Filters.regex("^(Longest Route)$"), self.longest_route),
+                MessageHandler(Filters.regex("^(Points)$"), self.points), MessageHandler(Filters.regex("^(Help)$"), help)],
+                CITY: [MessageHandler(Filters.text, self.pick_city),],
+                MARKET: [MessageHandler(Filters.text, self.pick_market),],
+                TICKET : [MessageHandler(Filters.text, self.pick_ticket),],
             },
-            fallbacks = [MessageHandler(Filters.regex("^Done$"), start)],
+            fallbacks = [MessageHandler(Filters.regex("^Done$"), self.start)],
             name = "ticket_to_ride",
             persistent= True
         )
@@ -251,7 +272,7 @@ class VTR_BOT():
         dp.add_handler(option_handler)
 
         # log all errors
-        dp.add_error_handler(error)
+        dp.add_error_handler(self.error)
 
         # Start the Bot
         updater.start_polling()
@@ -259,38 +280,356 @@ class VTR_BOT():
         updater.idle()
 
 
-    def available_colors(self, update, context):
+    def available_colors(self, db):
         """Check which colors are still available"""
-        pass
+        available_colors = []
+        p_colors = self.colors_players
+        players = db.get_data_table("Player", [["chat_id", "color"]], "color IS NOT NULL")
+        for player in players:
+            p_colors.remove(player[1][0])
+        for c in p_colors:
+            available_colors.append([c])
+        #available_colors.append(["spectator"])
+        return available_colors
+
+    def assign_cards(self, db, id, color=None, amount=1):
+        """assigns an amount of cards to a player or market"""
+        assigned_cards = []
+        if color is None:
+            available_cards = db.get_data_table("Card", [["id"]], "owner = 0")
+            if len(available_cards) < amount:
+                db.update_data_table("Card", {"owner": 0}, "id = 2")
+                logger.info("Card deck gets reshuffled!")
+                # Broadcast
+                available_cards = db.get_data_table("Card", [["id"]], "owner = 0")
+            i = 0
+            while i < amount:
+                assigned_cards.append(available_cards[0][0])
+                i += 1
+            for a_card in assigned_cards:
+                db.update_data_table("Card", {"owner": id}, "id = " + str(a_card))
+                logger.debug("Card " + str(a_card) + " assigned to " + str(id))
+        else:
+            market_cards = db.get_data_table("Card", [["id","color"]], "owner = 1")
+            present = False
+            for market_card in market_cards:
+                if market_card[1][0] in color:
+                    present = True
+                    card_id = market_card[0][0]
+            if not present:
+                return False
+            db.update_data_table("Card", {"owner": id}, "id = " + str(card_id))
+            logger.debug("Card " + str(a_card) + " assigned to " + str(id))
+
+        return True
+
+    def dispose_card(self, db, card_id):
+        """Dispose a card"""
+        db.update_data_table("Card", {"owner": 2}, "id = " + str(card_id))
+        logger.debug("Card " + str(card_id) + " disposed!")
+
+    def assign_tickets(self, db, id, amount = 1):
+        """assigns an amount of tickets to a player chat_id"""
+        assigned_tickets = []
+        show_routes = []
+        available_tickets = db.get_data_table("Ticket", [["id","city1","city2","value"]], "owner = 0")
+        i = 0
+        while i < amount:
+            assigned_tickets.append(available_tickets[0][0])
+            show_routes.append([str(available_tickets[0][0]) + ": " + str(available_tickets[1][0]) + " - " + str(available_tickets[2][0]) + " value: " + str(available_tickets[3][0])])
+            i += 1
+        for a_ticket in assigned_tickets:
+            db.update_data_table("Card", {"owner": id}, "id = " + str(a_ticket))
+            logger.debug("Card " + str(a_card) + " assigned to " + str(id))
+        return show_routes, assigned_tickets
+    
+    def dispose_ticket(self, db, ticket_id):
+        """Dispose a ticket"""
+        db.update_data_table("Ticket", {"owner": 0}, "id = " + str(ticket_id))
+        logger.debug("Ticket " + str(card_id) + " disposed!")
+
+    def make_nested_lists(self, data_list, items_each_line = 3):
+        """Makes nested lists with a shape to use as keyboard in markup"""
+        outer_list = []
+        inner_list = []
+        start_index = 0
+        stop_index = len(data_list)
+        index = start_index
+        inner_index = 1
+        while index < stop_index:
+            inner_list.append(data_list[index])
+            if inner_index < items_each_line:
+                inner_index += 1
+            else:
+                outer_list.append(inner_list)
+
+                inner_list = []
+                inner_index = 1
+            
+            index += 1
+        if len(inner_list) > 0:
+            outer_list.append(inner_list)
+
+        return outer_list
+
+    ###########################################################################################################################################
+
+    ### TELEGRAM PART
+
+    ############################################################################################################################################
 
     def start(self, update, context):
         """Start: add the chat_id to the player table"""
-        players = self.db.get_data_table("Player", ["chat_id", "color", "color IS NOT NULL"])
-        present = False
+        response = ""
+        db = DatabaseSqlite3(self.url)
+        players = db.get_data_table("Player", [["chat_id", "color"]], "color IS NOT NULL")
         for player in players:
             if update.message.chat_id == player["chat_id"]:
                 response += "Welcome back to Bobbie's Venetian Hotel & Casino! \n\n We are still playing ticket to ride!!!\n\n"
-                response += "Your color is: " + player["color"]
-            
+                response += "Your color is: " + player[1][0]
+                markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
+                update.message.reply_text(response, reply_markup=markup)
+                logger.info("user: " + str(update.message.chat_id) + " reconnected!")
+                return OPTIONS
+
+        present = False
+        spectators = db.get_data_table("Player", [["chat_id", "color"]], "color IS NULL")
+        present = False
+        for spectator in spectators:
+            if update.message.chat_id == spectator[0]:
+                response += "Welcome back to Bobbie's Venetian Hotel & Casino! \n\n We are still playing ticket to ride!!!\n\nPlease choose a color you want to play"     
+                present = True
+                logger.info("user: " + str(update.message.chat_id) + " reconnected!")
+
         if not present:
-            self.db.insert_data_table("Players", self.db.player_columns, [(update.message.chat_id, update.message.from_user.first_name, 0, 0, None)])
+            db.insert_data_table("Player", db.player_columns, [(update.message.chat_id, update.message.from_user.first_name, 0, 0, 0, None)])
+            response += "Hello, \n\nWelcome to Bobbie\'s Venitian Hotel & Casino\nCome and play with us!\n\nWe are playing Ticket To Ride tonight...\nChoose an available color to add yourself to the game!\n\nYou are now a spectator!"
+            logger.info("user: " + str(update.message.chat_id) + " added to player database!")
+        available_colors = self.available_colors(db)
+        markup = ReplyKeyboardMarkup(available_colors, one_time_keyboard=True)
         update.message.reply_text(response, reply_markup=markup)
+        db.close()
         return SELECTION
 
     def add(self, update, context):
         """Add a player to the game"""
         choice = update.message.text.lower()
-        result = self.db.get_data_table("Player", ["name","color"], "color = " + choice)
+        db = DatabaseSqlite3(self.url)
+        result = db.get_data_table("Player", [["name","color"]], "color LIKE '" + choice + "'")
         if len(result) > 0:
             response = "Somebody else is already assigned to this color, please choose another one!"
+            available_colors = self.available_colors(db)
             markup = ReplyKeyboardMarkup(available_colors, one_time_keyboard=True)
             update.message.reply_text(response, reply_markup=markup)
         else:
-            self.db.update_data_table("Player", {"color": choice}, "chat_id = " + str(update.message.chat_id))
+            db.update_data_table("Player", {"color": choice}, "chat_id = " + str(update.message.chat_id), True)
+            response = "You are assigned to player color: " + choice
+            logger.info("user: " + str(update.message.chat_id) + " choose color: " + str(choice))
+            # Assign cards
+            # Assign special_tickets
+            # Assign trains and stations
+            context.user_data['initialized'] = False
+            context.user_data['dispose_second_ticket'] = False
             markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
-            response = "You are assigned to player color: " + player["color"]
             update.message.reply_text(response, reply_markup=markup)
-            return OPTIONS 
+            db.close()
+            return OPTIONS
+
+    def choose_tickets(self, update, context):
+        """Assign three tickets and let them choose which on they want to hold"""
+        db = DatabaseSqlite3(self.url)
+        # check turn
+        tickets, ticket_ids = self.assign_tickets(db, update.message.chat_id, 3)
+        tickets.append(["Hold all"])
+        context.user_data['tickets_selection'] = ticket_ids
+        markup = ReplyKeyboardMarkup(tickets, one_time_keyboard=True)
+        update.message.reply_text("Choose the ticket(s) you want to delete:", reply_markup=markup)
+        db.close()
+        return TICKET
+
+    def pick_ticket(self, update, context):
+        """Drop a tickets and let them choose which one they want to hold"""
+        choice = update.message.text()
+        if choice in "Hold all":
+            del context.user_data['tickets_selection']
+            markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
+            update.message.reply_text("You hold all your new tickets!", reply_markup=markup)
+            # Broadcast
+            # Next Turn
+            context.user_data['initialized'] = True
+            return OPTIONS
+        
+        db = DatabaseSqlite3(self.url)
+        ticket_list = choice.split(":")
+        result = db.get_data_table("Ticket", db.ticket_columns, "id =" + ticket_list[0])
+        if len(result) < 1:
+            update.message.reply_text("Input was not correct, choose if you want to delete on of following routes:")
+            return TICKET
+
+        self.dispose_ticket(db, result[0][0])
+        if context.user_data['dispose_second_ticket'] or not context.user_data['initialized']:
+            context.user_data['initialized'] = True
+            del context.user_data['tickets_selection']
+            markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
+            update.message.reply_text("Ticket was deleted!", reply_markup=markup)
+            # Broadcast
+            # Next Turn
+            db.close()
+            return OPTIONS
+
+        context.user_data['dispose_second_ticket'] = True
+        ticket_ids = context.user_data['tickets_selection']
+        ticket_ids.remove(int(ticket_list[0]))
+        tickets_show = []
+        for id in ticket_ids:
+            result = db.get_data_table("Ticket", db.ticket_columns, "id = " + str(id))
+            tickets_show.append([str(result[0][0]) + ": " + str(result[1][0]) + " - " + str(result[2][0]) + " value: " + str(result[3][0])])
+        markup = ReplyKeyboardMarkup(tickets_show, one_time_keyboard=True)
+        update.message.reply_text("Ticket was deleted, want to delete another route?", reply_markup=markup)
+        db.close()
+        return TICKET
+
+    def build_station(self, update, context):
+        """Build a station"""
+        db = DatabaseSqlite3(self.url)
+        # check turn
+        # check cards (and check amount of stations build)
+        cities = db.get_data_table("City", db.city_columns, "station IS NULL")
+        cities_list = []
+        for city in cities:
+            cities_list.append(city[1])
+        cities_keyboard = self.make_nested_lists(cities_list, 4)
+        cities_keyboard.append(["Back"])
+        markup = ReplyKeyboardMarkup(cities_keyboard, one_time_keyboard=True)
+        update.message.reply_text("Select the city where to build the station:", reply_markup=markup)
+        db.close()
+        return CITY
+
+    def build_route(self, update, context):
+        """Build a station"""
+        db = DatabaseSqlite3(self.url)
+        # check turn
+        cities = db.get_data_table("City", db.city_columns, "id > 0")
+        cities_list = []
+        for city in cities:
+            cities_list.append(city[1])
+        cities_keyboard = self.make_nested_lists(cities_list, 4)
+        cities_keyboard.append(["Back"])
+        markup = ReplyKeyboardMarkup(cities_keyboard, one_time_keyboard=True)
+        update.message.reply_text("Select the city where the route starts:", reply_markup=markup)
+        db.close()
+        return CITY
+
+    def city_information(self, update, context):
+        """Show information about a city"""
+        db = DatabaseSqlite3(self.url)
+        cities = db.get_data_table("City", db.city_columns, "id > 0")
+        cities_list = []
+        for city in cities:
+            cities_list.append(city[1])
+        cities_keyboard = self.make_nested_lists(cities_list, 4)
+        cities_keyboard.append(["Back"])
+        markup = ReplyKeyboardMarkup(cities_keyboard, one_time_keyboard=True)
+        update.message.reply_text("Select the city where the route starts:", reply_markup=markup)
+        db.close()
+        return CITY
+
+    def pick_city(self, update, context):
+        """Choose a city and do what you want to do"""
+        pass
+        # build station
+        # build route
+        # show information
+
+    def choose_market(self, update, context):
+        """Choose a card from the market place"""
+        db = DatabaseSqlite3(self.url)
+        # check turn
+        market_cards = db.get_data_table("Card", db.card_columns, "id = 1")
+        market_list = []
+        for card in market_cards:
+            market_list.append(card[1])
+        market_list.append("random")
+        market_keyboard = self.make_nested_lists(market_list, 4)
+        markup = ReplyKeyboardMarkup(market_keyboard, one_time_keyboard=True)
+        update.message.reply_text("Select a card from the market:", reply_markup=markup)
+        db.close()
+        return MARKET
+
+    def pick_market(self, update, context):
+        """Pick a card from the market"""
+        choice = update.message.text()
+        return OPTIONS
+
+    def deck(self, update, context):
+        """Show your current deck"""
+        response = "Not implemented yet"
+        markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
+        update.message.reply_text(response, reply_markup=markup)
+        return OPTIONS
+
+    def market(self, update, context):
+        """Show the market"""
+        response = "Not implemented yet"
+        markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
+        update.message.reply_text(response, reply_markup=markup)
+        return OPTIONS
+    
+    def overview(self, update, context):
+        """Shows the overview of the game"""
+        response = "Not implemented yet"
+        markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
+        update.message.reply_text(response, reply_markup=markup)
+        return OPTIONS
+
+    def map(self, update, context):
+        """send the map as a png"""
+        #bot.send_photo(chat_id=chat_id, photo=open('tests/test.png', 'rb'))
+        #https://github.com/python-telegram-bot/python-telegram-bot/wiki/Code-snippets#post-an-image-file-from-disk
+        response = "Not implemented yet"
+        markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
+        update.message.reply_text(response, reply_markup=markup)
+        return OPTIONS
+
+    def all_routes(self, update, context):
+        """Show all routes in the game"""
+        response = "Not implemented yet"
+        markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
+        update.message.reply_text(response, reply_markup=markup)
+        return OPTIONS
+
+    def your_routes(self, update, context):
+        """Show all the route you pocess"""
+        response = "Not implemented yet"
+        markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
+        update.message.reply_text(response, reply_markup=markup)
+        return OPTIONS
+
+    def longest_route(self, update, context):
+        """Show who has the longest continous route"""
+        response = "Not implemented yet"
+        markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
+        update.message.reply_text(response, reply_markup=markup)
+        return OPTIONS
+
+    def points(self, update, context):
+        """Show all the players points"""
+        response = "Not implemented yet"
+        markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
+        update.message.reply_text(response, reply_markup=markup)
+        return OPTIONS
+
+    def help(self, update, context):
+        """help section"""
+        response = "Not implemented yet"
+        markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
+        update.message.reply_text(response, reply_markup=markup)
+        return OPTIONS
+
+
+    def error(self, update, context):
+        """Log Errors caused by Updates."""
+        logger.warning('Update "%s" caused error "%s"', update, context.error)
 
 
 if __name__ == "__main__":
