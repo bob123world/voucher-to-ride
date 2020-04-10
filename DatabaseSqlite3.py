@@ -40,6 +40,12 @@ class DatabaseSqlite3():
         column_extras = ["PRIMARY KEY AUTOINCREMENT", "NOT NULL", ""]
         self.card_columns = [column_names, column_types, column_extras]
 
+        # Turn table
+        column_names = ["chat_id","playing","sequence","turns"]
+        column_types = ["INTEGER", "INTEGER", "INTEGER", "INTEGER"]
+        column_extras = ["PRIMARY KEY NOT NULL", "NOT NULL", "NOT NULL", ""]
+        self.turn_columns = [column_names, column_types, column_extras]
+
         if check:
             tables = self.table_info()
             if "Player" not in tables:
@@ -52,6 +58,8 @@ class DatabaseSqlite3():
                 self.create_table("Ticket", self.ticket_columns)
             if "Card" not in tables:
                 self.create_table("Card", self.card_columns)
+            if "Turn" not in tables:
+                self.turn_table("Turn", self.turn_columns)   
             logger.info("All tables present in database!")
 
     def create_table(self, table_name, columns_info):

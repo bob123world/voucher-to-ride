@@ -13,7 +13,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 logger = logging.getLogger(__name__)
 
-SELECTION, OPTIONS, CITY, ROUTE, MARKET, TICKET, STATION, RESTART = range(8)
+SELECTION, OPTIONS, CITY, ROUTE, MARKET, TICKET, STATION, CARDS = range(8)
 
 option_keyboard = [["Get Market Card", "Build Route"],
                   ["Build Station", "Get New Tickets"],
@@ -201,6 +201,9 @@ class VTR_BOT():
         
         logger.info("Ticket table OK")
 
+        # check turn table for all players
+        ### TO DO
+
         # Get game parameters
         present = False
         game = {}
@@ -221,6 +224,8 @@ class VTR_BOT():
         self.schips_active = game["schips"]
         self.stations_active = game["stations"]["enabled"]
         self.scores = game["scores"]
+        self.trains_last_turns = game["last_turns_trains"]
+        self.turns_left = game["turns_left"]
 
         # Set game pieces
         present = False
@@ -263,6 +268,8 @@ class VTR_BOT():
                 CITY: [MessageHandler(Filters.text, self.pick_city),],
                 MARKET: [MessageHandler(Filters.text, self.pick_market),],
                 TICKET : [MessageHandler(Filters.text, self.pick_ticket),],
+                ROUTE : [MessageHandler(Filters.text, self.pick_route),],
+                CARDS : [MessageHandler(Filters.text, self.pick_cards),],
             },
             fallbacks = [MessageHandler(Filters.regex("^Done$"), self.start)],
             name = "ticket_to_ride",
@@ -270,6 +277,7 @@ class VTR_BOT():
         )
 
         dp.add_handler(option_handler)
+        dp.add_handler(CommandHandler('gogogo', self.start_game))
 
         # log all errors
         dp.add_error_handler(self.error)
@@ -340,14 +348,76 @@ class VTR_BOT():
             i += 1
         for a_ticket in assigned_tickets:
             db.update_data_table("Card", {"owner": id}, "id = " + str(a_ticket))
-            logger.debug("Card " + str(a_card) + " assigned to " + str(id))
+            logger.debug("Card " + str(a_ticket) + " assigned to " + str(id))
         return show_routes, assigned_tickets
     
     def dispose_ticket(self, db, ticket_id):
         """Dispose a ticket"""
         db.update_data_table("Ticket", {"owner": 0}, "id = " + str(ticket_id))
-        logger.debug("Ticket " + str(card_id) + " disposed!")
+        logger.debug("Ticket " + str(ticket_id) + " disposed!")
 
+    def match_cards_with_routes(self, routes, cards):
+        """See which routes are possible with the cards given.
+        If one route given also return card combinations to build the route
+        Both routes and cards are tuples containing all database columns"""
+        deck = {}
+        for card in cards:
+            if card[1] not in deck:
+                deck[card[1]] = 1
+            else:
+                deck[card[1]] = 1
+
+        return_routes = []
+        for route in routes:
+            card_choices = []
+            possible = True
+            if route[5] > 0:
+                if "locomotive" in deck:
+                    if deck["locomotive"] < route[5]:
+                        possible = False
+                else:
+                    possible = False
+            if route[3] not in "blank":
+                if route[3] in deck:
+                    if deck[route[3]] < route[4]:
+                        if "locomotive" in deck:
+                            if deck[route[3]] + deck["locomotive"] < route[4]:
+                                possible = False
+                            # add choices
+                    else:
+                        card_choices.append[[route[4] + " " + route[3]]]
+                        if "locomotive" in deck:
+                            for locomotive in range(1,deck["locomotive"] + 1):
+                               card_choices.append[[str(locomotive) + "locomotive + " + str(route[4]-1) + " " + route[3]]] 
+            else:
+                if "locomotive" in deck:
+                    length = route[4] - deck["locomotive"]
+                else:
+                    length = route[4]
+                found = False
+                for color, amount in deck.items(): 
+                    if amount >= length:
+                        found = True
+                if not found:
+                    possible = False
+
+            if possible:
+                route_text = str(route[0]) + ": " + str(route[1]) + " - " + str(route[2]) + " " + str(route[3]) + " dist: " + str(route[4]) + " loc: " + str(route[5])
+                if route[6] > 0:
+                    route_text += " tunnel"
+                return_routes.append([route_text])
+
+        return return_routes, card_choices
+
+    def build_route_with_cards(self, db, chat_id, selection):
+        """Assign cards to graveyard"""
+        ok = True
+        splitted = selection.split(" + ")
+        for split in splitted:
+            pieces = split.split(" ")
+            db.update_data_table("Card", {"owner": 2}, "id = " + str(chat_id) + " AND color LIKE '" + str(pieces[1]) + "'")
+        return ok
+    
     def make_nested_lists(self, data_list, items_each_line = 3):
         """Makes nested lists with a shape to use as keyboard in markup"""
         outer_list = []
@@ -371,6 +441,34 @@ class VTR_BOT():
             outer_list.append(inner_list)
 
         return outer_list
+
+    def next_turn(self, db):
+        """Sets the next turn"""
+        player = db.get_data_table("Turn", [["sequence, turns"]], "playing = 1")
+        db.update_data_table("Turn", {"playing": 0}, "playing = 1")
+        players = db.get_data_table("Turn", [["trains"]], "color IS NOT NULL")
+        if player[0][1] is None:
+            for p in players:
+                if p[0] <= self.trains_last_turns:
+                    db.update_data_table("Turn", {"turns": self.turns_left}, "chat_id > 0")
+        else:
+            db.update_data_table("Turn", {"turns": player[0][1] - 1}, "sequence = " +  str(player[0][0]))
+
+        if player[0][0] >= len(players):
+            db.update_data_table("Turn", {"playing": 1}, "sequence = 1")
+        else:
+            db.update_data_table("Turn", {"playing": 1}, "sequence = " + str(player[0][0]))
+
+        player = db.get_data_table("Turn", [["chat_id, sequence, turns"]], "playing = 1")
+        if player[0][2] is not None:
+            if player[0][2] <= 0:
+                # end the game
+                response = "GAME HAS ENDED\n\nRESULTS:"
+                pass
+        info = db.get_data_table("Player", db.player_columns, "chat_id = " + str(player[0][0]))
+        response = "Turn for player " + info[5][0] + " -> " + info[1][0]
+        # Broadcast
+        
 
     ###########################################################################################################################################
 
@@ -435,6 +533,19 @@ class VTR_BOT():
             db.close()
             return OPTIONS
 
+    def start_game(self, update, context):
+        """Start the game"""
+        db = DatabaseSqlite3(self.url)
+        players = db.get_data_table("Player", [["chat_id"]], "color IS NOT NULL")
+        seq = 1
+        for player in players:
+            if seq is 1:
+                db.insert_data_table("Turn", db.turn_columns, [(update.message.chat_id, 1, seq, None)])
+                # Broadcast
+            else:
+                db.insert_data_table("Turn", db.turn_columns, [(update.message.chat_id, 0, seq, None)])
+        # Broadcast
+
     def choose_tickets(self, update, context):
         """Assign three tickets and let them choose which on they want to hold"""
         db = DatabaseSqlite3(self.url)
@@ -494,6 +605,7 @@ class VTR_BOT():
         db = DatabaseSqlite3(self.url)
         # check turn
         # check cards (and check amount of stations build)
+        context.user_data['station'] = True
         cities = db.get_data_table("City", db.city_columns, "station IS NULL")
         cities_list = []
         for city in cities:
@@ -506,9 +618,10 @@ class VTR_BOT():
         return CITY
 
     def build_route(self, update, context):
-        """Build a station"""
+        """Build a route"""
         db = DatabaseSqlite3(self.url)
         # check turn
+        context.user_data['route'] = True
         cities = db.get_data_table("City", db.city_columns, "id > 0")
         cities_list = []
         for city in cities:
@@ -536,10 +649,82 @@ class VTR_BOT():
 
     def pick_city(self, update, context):
         """Choose a city and do what you want to do"""
-        pass
+        choice = update.message.text()
+        if choice in "Back":
+            context.user_data['station'] = False
+            context.user_data['route'] = False
+            context.user_data['city_info'] = False
+            markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
+            update.message.reply_text("Going back...", reply_markup=markup)
+            return OPTIONS
+        db = DatabaseSqlite3(self.url)
         # build station
+        if "station" in context.user_data:
+            if context.user_data['station']:
+                cities = db.get_data_table("City", db.city_columns, "station IS NULL")
+                for city in cities:
+                    found = False
+                    if city[1] in choice:
+                        found = True
+                    
+                if not found:
+                    cities_list = []
+                    for city in cities:
+                        cities_list.append(city[1])
+                    cities_keyboard = self.make_nested_lists(cities_list, 4)
+                    cities_keyboard.append(["Back"])
+                    markup = ReplyKeyboardMarkup(cities_keyboard, one_time_keyboard=True)
+                    update.message.reply_text("The input was not valid, choose a station from the list below:", reply_markup=markup)
+                    return CITY
+
+                db.update_data_table("City", {{"owner":update.message.chat_id}}, "name LIKE " + str(choice), True)
+                logger.info("Station was built in" + str(choice) + "by player: " + str(update.message.chat_id))
+                # broadcast
+                # next turn
+                context.user_data['station'] = False
+                markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
+                update.message.reply_text("Going back...", reply_markup=markup)
+                return OPTIONS
         # build route
+        if "route" in context.user_data:
+            if context.user_data['route']:
+                routes = db.get_data_table("Route", db.route_columns, "city1 LIKE '" + str(choice) + "' OR city2 LIKE '" + str(choice) + "' AND owner = 0")
+                if len(routes) < 1:
+                    cities = db.get_data_table("City", db.city_columns, "id > 0")
+                    cities_list = []
+                    for city in cities:
+                        cities_list.append(city[1])
+                    cities_keyboard = self.make_nested_lists(cities_list, 4)
+                    cities_keyboard.append(["Back"])
+                    markup = ReplyKeyboardMarkup(cities_keyboard, one_time_keyboard=True)
+                    update.message.reply_text("The input was not valid, choose a city from the list below:", reply_markup=markup)
+                    return CITY
+                
+                # get cards 
+                player_cards = db.get_data_table("Card", [["color"]], "id = " + str(update.message.chat_id))
+                buildable_routes, card_combinations = self.match_cards_with_routes(routes, player_cards)
+                markup = ReplyKeyboardMarkup(buildable_routes, one_time_keyboard=True)
+                update.message.reply_text("Select one of following route's to build:", reply_markup=markup)
+                return ROUTE
+
         # show information
+    def pick_route(self, update, context):
+        """Choose a route to build and get cards selection"""
+        choice = update.message.text()
+        if choice in "Back" or not context.user_data['route']:
+            context.user_data['route'] = False
+            markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
+            update.message.reply_text("Going back...", reply_markup=markup)
+            return OPTIONS
+
+    def pick_cards(self, update, context):
+        """Get the cards selection to build a route"""
+        choice = update.message.text()
+        if choice in "Back" or not context.user_data['route']:
+            context.user_data['route'] = False
+            markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
+            update.message.reply_text("Going back...", reply_markup=markup)
+            return OPTIONS
 
     def choose_market(self, update, context):
         """Choose a card from the market place"""
@@ -594,10 +779,47 @@ class VTR_BOT():
         found = False
         for color in market_colors:
             if choice in color:
-                found = True
+                if context.user_data['second_pick'] and color not in "locomotive":
+                    found = True
+                else:
+                    found = True
+
         if not found:
-            pass
-        return OPTIONS
+            market_list = []
+            for card in market_cards:
+                market_list.append(card[1])
+            market_list.append("random")
+            market_keyboard = self.make_nested_lists(market_list, 2)
+            market_keyboard.append(["Back"])
+            markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
+            update.message.reply_text("Input was not valid, try picking a card again:", reply_markup=markup)
+            return MARKET
+
+        self.assign_cards(db, update.message.chat_id, choice)
+        self.assign_cards(db, 1)
+        if context.user_data['second_pick']:
+            context.user_data['second_pick'] = False
+            markup = ReplyKeyboardMarkup(option_keyboard, one_time_keyboard=True)
+            update.message.reply_text("You chose a card!", reply_markup=markup)
+            # show deck
+            # next turn
+            # broadcast
+            db.close()
+            return OPTIONS
+        
+        context.user_data['second_pick'] = True
+        market_cards = db.get_data_table("Card", db.card_columns, "id = 1 AND color NOT LIKE locomotive")
+        market_list = []
+        for card in market_cards:
+            market_list.append(card[1])
+        market_list.append("random")
+        market_keyboard = self.make_nested_lists(market_list, 2)
+        market_keyboard.append(["Back"])
+        markup = ReplyKeyboardMarkup(market_keyboard, one_time_keyboard=True)
+        update.message.reply_text("You chose a card, choose another one:", reply_markup=markup)
+        # show deck
+        # broadcast
+        return MARKET
 
     def deck(self, update, context):
         """Show your current deck"""

@@ -19,5 +19,7 @@
         "8" : 21,
         "station": 4,
         "longest_route" : 10
-    }
+    },
+    "last_turns_trains": 2,
+    "turns_left": 1
 }
