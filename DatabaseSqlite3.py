@@ -59,7 +59,7 @@ class DatabaseSqlite3():
             if "Card" not in tables:
                 self.create_table("Card", self.card_columns)
             if "Turn" not in tables:
-                self.turn_table("Turn", self.turn_columns)   
+                self.create_table("Turn", self.turn_columns)   
             logger.info("All tables present in database!")
 
     def create_table(self, table_name, columns_info):
