@@ -416,6 +416,83 @@ class VTR_BOT():
 
         return return_routes, card_choices
 
+    def possible_card_combination(self, db, id, distance, color, locomotives = 0):
+        """Check what card combinations are possible for a route"""
+        possible = True
+        deck_cards = db.get_data_table("Ticket", [["color"]], "owner = " + str(id))
+        deck = {}
+        possible_combinations = []
+        rest_distance = distance
+
+        for card in deck_cards:
+            if card[0] in deck:
+                deck[card[0]] += 1
+            else:
+                deck[card[0]] = 1
+
+        if locomotives > 0:
+            if "locomotive" in deck:
+                if deck["locomotive"] >= locomotives:
+                    deck["locomotive"] -= locomotives
+                    rest_distance -= locomotives
+                else:
+                    possible = False
+            else:
+                possible = False
+        
+        colors = []
+        if color in "blank":
+            for c in deck:
+                colors.append[c]
+        else:
+            colors.append[color]
+
+        combination_found = False
+        for c in colors:
+            if c in deck:
+                # All color cards
+                if rest_distance >= deck[c]:
+                    combination_found = True
+                    locos = deck["locomotive"]
+                    if locos > 0:
+                        if locomotives > 0:
+                            for l in range(0,locos+1):
+                                possible_combinations.append [str(locomotives + l) + " x locomotives + " +  str(deck[c] - l) + " x " + c]
+                        else:
+                            possible_combinations.append [str(deck[c]) + " x " + c]
+                            for l in range(1,locos+1):
+                                possible_combinations.append [str(l) + " x locomotives + " +  str(deck[c] - l) + " x " + c]
+                    else:
+                        if locomotives > 0:
+                            possible_combinations.append [str(locomotives) + " x locomotives + " +  str(deck[c]) + " x " + c]
+                        else:
+                            possible_combinations.append [str(deck[c]) + " x " + c]
+                # color and locomotives
+                elif rest_distance >= deck[c] + deck["locomotive"]:
+                    combination_found = True
+                    locos_nec = rest_distance - deck[c]
+                    locos = deck["locomotive"] - locos_nec
+                    if locos > 0:
+                        if locomotives > 0:
+                            for l in range(0,locos+1):
+                                possible_combinations.append [str(locomotives + l + locos_nec) + " x locomotives + " +  str(deck[c] - l) + " x " + c]
+                        else:
+                            possible_combinations.append [str(locos_nec) + " x locomotives + " +  str(deck[c]) + " x " + c]
+                            for l in range(1,locos+1):
+                                possible_combinations.append [str(l + locos_nec) + " x locomotives + " +  str(deck[c] - l) + " x " + c]
+                    else:
+                        if locomotives > 0:
+                            possible_combinations.append [str(locomotives + locos_nec) + " x locomotives + " +  str(deck[c]) + " x " + c]
+                        else:
+                            possible_combinations.append [str(locos_nec) + " x locomotives + " +  str(deck[c]) + " x " + c]
+            else:
+                possible = False
+
+        if not combination_found:
+            possible = False
+        
+        return possible, possible_combinations
+
     def build_route_with_cards(self, db, chat_id, selection):
         """Assign cards to graveyard"""
         ok = True
